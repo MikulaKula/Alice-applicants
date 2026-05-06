@@ -1,0 +1,13 @@
+.venv/
+.venv311/
+__pycache__/
+*.pyc
+
+chroma_db/
+chroma_db_exp_*/
+chroma_db_BAAI_bge-m3/
+chroma_db_intfloat_multilingual-e5-small/
+chroma_db_sentence-transformers_all-MiniLM-L6-v2/
+
+.DS_Store
+.vscode/
