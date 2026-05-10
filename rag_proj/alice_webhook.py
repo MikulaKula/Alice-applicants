@@ -8,43 +8,49 @@ app = FastAPI()
 DOCS_DIR = Path("documents")
 DOCUMENT_TEXTS = []
 
+
 INTENT_RULES = {
     "migration": {
-        "triggers": ["migration", "registration", "visa", "arrival", "passport"],
+        "triggers": ["migration", "registration", "visa", "passport", "arrival"],
         "positive": [
             "миграционный", "миграция", "миграционный учет", "миграционный учёт",
-            "постановка на учет", "постановка на учёт", "регистрация",
+            "регистрация", "постановка на учет", "постановка на учёт",
             "иностранный гражданин", "паспорт", "виза", "прибытие"
         ],
         "negative": [
-            "поступающих", "поступление", "абитуриент", "зачисление",
-            "портфолио", "магистратура", "бакалавриат", "квота"
+            "абитуриент", "поступающий", "поступающих", "поступление",
+            "зачисление", "портфолио", "магистратура", "бакалавриат",
+            "скидка", "скидок", "аттестация"
         ],
     },
     "dormitory": {
         "triggers": ["dormitory", "housing", "accommodation", "live"],
-        "positive": ["общежитие", "общежития", "проживание", "заселение", "место в общежитии"],
-        "negative": ["поступающих", "портфолио", "зачисление"],
+        "positive": [
+            "общежитие", "общежития", "проживание", "заселение",
+            "место в общежитии", "кампус"
+        ],
+        "negative": [
+            "портфолио", "собеседование", "скидка", "аттестация"
+        ],
     },
     "contacts": {
-        "triggers": ["contact", "email", "support", "help"],
-        "positive": ["контакт", "почта", "email", "поддержка", "помощь", "адрес"],
+        "triggers": ["contact", "email", "support", "help", "office"],
+        "positive": [
+            "контакт", "почта", "email", "e-mail", "поддержка",
+            "помощь", "адрес", "телефон", "обратной связи"
+        ],
+        "negative": [
+            "портфолио", "скидка", "аттестация"
+        ],
+    },
+    "regulations": {
+        "triggers": ["regulation", "regulations", "rules", "policy"],
+        "positive": [
+            "положение", "регламент", "правила", "приказ",
+            "утверждено", "порядок"
+        ],
         "negative": [],
     },
-}
-
-QUERY_EXPANSIONS = {
-    "migration": ["миграционный", "миграция", "иностранный", "иностранные"],
-    "registration": ["регистрация", "учет", "учёт", "миграционный учет", "миграционный учёт"],
-    "documents": ["документы", "документ", "копии", "скан"],
-    "dormitory": ["общежитие", "общежития", "проживание"],
-    "housing": ["общежитие", "проживание", "заселение"],
-    "visa": ["виза", "визовый", "приглашение"],
-    "contact": ["контакт", "почта", "email", "адрес"],
-    "support": ["поддержка", "помощь", "сопровождение"],
-    "regulations": ["положение", "регламент", "правила", "приказ"],
-    "international": ["иностранный", "иностранные", "международный"],
-    "student": ["студент", "студенты", "обучающийся"],
 }
 
 
@@ -76,7 +82,10 @@ def load_documents() -> None:
             try:
                 text = load_docx_text(path)
                 if text:
-                    texts.append({"source": path.name, "text": text})
+                    texts.append({
+                        "source": path.name,
+                        "text": text
+                    })
             except Exception:
                 pass
 
@@ -88,7 +97,10 @@ load_documents()
 
 @app.get("/")
 def health_check():
-    return {"status": "ok", "documents_loaded": len(DOCUMENT_TEXTS)}
+    return {
+        "status": "ok",
+        "documents_loaded": len(DOCUMENT_TEXTS)
+    }
 
 
 def detect_intent(query: str) -> str | None:
@@ -102,76 +114,43 @@ def detect_intent(query: str) -> str | None:
     return None
 
 
-def expand_query(query: str) -> list[str]:
-    words = re.findall(r"[a-zA-Zа-яА-ЯёЁ]+", query.lower())
-    expanded = []
-
-    for word in words:
-        if len(word) >= 4:
-            expanded.append(word)
-        if word in QUERY_EXPANSIONS:
-            expanded.extend(QUERY_EXPANSIONS[word])
-
-    return list(set(expanded))
-
-
 def score_text(query: str, text: str, source: str) -> int:
-    keywords = expand_query(query)
+    intent = detect_intent(query)
+
     text_lower = text.lower()
     source_lower = source.lower()
 
     score = 0
 
-    for word in keywords:
-        word_lower = word.lower()
-        if word_lower in text_lower:
-            score += 1
-        if word_lower in source_lower:
-            score += 3
-
-    intent = detect_intent(query)
+    query_words = re.findall(r"[a-zA-Zа-яА-ЯёЁ]+", query.lower())
+    for word in query_words:
+        if len(word) >= 4:
+            if word in text_lower:
+                score += 1
+            if word in source_lower:
+                score += 2
 
     if intent:
         rule = INTENT_RULES[intent]
 
         for word in rule["positive"]:
             if word.lower() in text_lower:
-                score += 5
-            if word.lower() in source_lower:
                 score += 8
+            if word.lower() in source_lower:
+                score += 12
 
         for word in rule["negative"]:
             if word.lower() in text_lower:
-                score -= 4
+                score -= 6
             if word.lower() in source_lower:
-                score -= 10
+                score -= 12
 
     return score
 
 
-def choose_fragment(query: str, text: str) -> str:
-    text_lower = text.lower()
-    keywords = expand_query(query)
-
-    intent = detect_intent(query)
-    if intent:
-        keywords = INTENT_RULES[intent]["positive"] + keywords
-
-    start = 0
-
-    for word in keywords:
-        pos = text_lower.find(word.lower())
-        if pos != -1:
-            start = max(0, pos - 120)
-            break
-
-    fragment = text[start:start + 500]
-    return fragment
-
-
-def retrieve_answer(query: str) -> str:
+def find_best_document(query: str):
     if not DOCUMENT_TEXTS:
-        return "The document base is not loaded yet."
+        return None, 0
 
     best_doc = None
     best_score = -10**9
@@ -182,12 +161,55 @@ def retrieve_answer(query: str) -> str:
             best_score = score
             best_doc = doc
 
-    if best_doc is None or best_score <= 0:
+    return best_doc, best_score
+
+
+def make_english_answer(query: str) -> str:
+    intent = detect_intent(query)
+    best_doc, score = find_best_document(query)
+
+    if best_doc is None or score <= 0:
         return "I could not find relevant information in the HSE documents."
 
-    fragment = choose_fragment(query, best_doc["text"])
+    source = best_doc["source"]
 
-    return f"According to HSE documents ({best_doc['source']}): {fragment}..."
+    if intent == "migration":
+        return (
+            "According to the available HSE documents, questions about migration registration "
+            "should be checked through the official university procedures for international students. "
+            "The student may need to provide identity and migration-related documents, such as passport, visa, "
+            "arrival or registration documents, depending on the specific case. "
+            f"Relevant source: {source}."
+        )
+
+    if intent == "dormitory":
+        return (
+            "According to the available HSE documents, international students may use HSE dormitory-related "
+            "services if they meet the relevant university conditions. The exact accommodation procedure, "
+            "allocation rules, and settlement details should be checked in the official dormitory or admission documents. "
+            f"Relevant source: {source}."
+        )
+
+    if intent == "contacts":
+        return (
+            "According to the available HSE documents, students should use the official HSE contact channels "
+            "for support questions. If the issue concerns documents, migration, accommodation, or academic procedures, "
+            "it is better to contact the responsible university office directly. "
+            f"Relevant source: {source}."
+        )
+
+    if intent == "regulations":
+        return (
+            "According to the available HSE documents, this topic is regulated by official university rules, "
+            "orders, or regulations. The exact procedure depends on the specific document and student category. "
+            f"Relevant source: {source}."
+        )
+
+    return (
+        "I found relevant information in the HSE documents, but the current lightweight version of the assistant "
+        "can only provide a short summary. Please check the official source for exact details. "
+        f"Relevant source: {source}."
+    )
 
 
 @app.post("/alice")
@@ -203,7 +225,7 @@ async def alice_webhook(request: Request):
     if not user_text:
         answer = "Hello. I can help international students with HSE-related questions."
     else:
-        answer = retrieve_answer(user_text)
+        answer = make_english_answer(user_text)
 
     return {
         "version": data.get("version", "1.0"),
