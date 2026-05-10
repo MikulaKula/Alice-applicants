@@ -1,7 +1,6 @@
-langchain==0.2.16
-langchain-community==0.2.16
-langchain-openai==0.1.23
+fastapi
+uvicorn
 chromadb==0.5.5
-sentence-transformers==3.0.1
 python-docx==1.1.2
-openai==1.42.0
+numpy
+requests
