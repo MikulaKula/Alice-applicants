@@ -192,7 +192,11 @@ def make_english_answer(query: str) -> str:
     best_doc, score = find_best_document(query)
 
     if best_doc is None or score <= 0:
-        return "I could not find relevant information in the HSE documents."
+        return (
+    "I could not find this information in the official HSE documents. "
+    "Please try rephrasing the question or ask about admissions, migration, dormitories, "
+    "university regulations, or international student support."
+)
 
     source = best_doc["source"]
 
