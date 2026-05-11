@@ -6,72 +6,36 @@ from docx import Document
 app = FastAPI()
 
 DOCS_DIR = Path("documents")
-DOCUMENT_TEXTS = []
+CHUNKS = []
+
+CHUNK_SIZE = 900
+CHUNK_OVERLAP = 150
 
 
 INTENT_RULES = {
     "migration": {
-    "triggers": [
-        "migration",
-        "registration",
-        "visa",
-        "passport",
-        "arrival",
-        "migration registration"
-    ],
-
-    "positive": [
-        "миграционный",
-        "миграция",
-        "миграционный учет",
-        "миграционный учёт",
-        "регистрация",
-        "постановка на учет",
-        "постановка на учёт",
-        "иностранный гражданин",
-        "иностранный студент",
-        "паспорт",
-        "виза",
-        "прибытие",
-        "документ",
-        "документы",
-        "уведомление"
-    ],
-
-    "negative": [
-        "скидка",
-        "скидок",
-        "аттестация",
-        "портфолио",
-        "собеседование"
-    ],
-},
+        "triggers": ["migration", "registration", "visa", "passport", "arrival"],
+        "positive": [
+            "миграционный", "миграция", "миграционный учет", "миграционный учёт",
+            "регистрация", "постановка на учет", "постановка на учёт",
+            "иностранный гражданин", "иностранный студент", "паспорт", "виза",
+            "прибытие", "документ", "документы", "уведомление"
+        ],
+        "negative": ["скидка", "скидок", "аттестация", "портфолио", "собеседование"],
+    },
     "dormitory": {
         "triggers": ["dormitory", "housing", "accommodation", "live"],
-        "positive": [
-            "общежитие", "общежития", "проживание", "заселение",
-            "место в общежитии", "кампус"
-        ],
-        "negative": [
-            "портфолио", "собеседование", "скидка", "аттестация"
-        ],
+        "positive": ["общежитие", "общежития", "проживание", "заселение", "место в общежитии"],
+        "negative": ["портфолио", "собеседование", "скидка", "аттестация"],
     },
     "contacts": {
         "triggers": ["contact", "email", "support", "help", "office"],
-        "positive": [
-            "контакт", "почта", "email", "e-mail", "поддержка",
-            "помощь", "адрес", "телефон", "обратной связи"
-        ],
-        "negative": [
-            "портфолио", "скидка", "аттестация"
-        ],
+        "positive": ["контакт", "почта", "email", "e-mail", "поддержка", "помощь", "адрес", "телефон"],
+        "negative": ["портфолио", "скидка", "аттестация"],
     },
     "regulations": {
         "triggers": ["regulation", "regulations", "rules", "policy"],
-        "positive": [
-            "положение", "регламент", "правила", "приказ",
-            "утверждено", "порядок"
-        ],
+        "positive": ["положение", "регламент", "правила", "приказ", "утверждено", "порядок"],
         "negative": [],
     },
 }
@@ -95,34 +59,54 @@ def load_docx_text(path: Path) -> str:
     return clean_text(" ".join(parts))
 
 
-def load_documents() -> None:
-    global DOCUMENT_TEXTS
+def split_into_chunks(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
+    chunks = []
+    start = 0
 
-    texts = []
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end].strip()
+
+        if chunk:
+            chunks.append(chunk)
+
+        if end >= len(text):
+            break
+
+        start = end - overlap
+
+    return chunks
+
+
+def load_chunks() -> None:
+    global CHUNKS
+
+    chunks = []
 
     if DOCS_DIR.exists():
         for path in DOCS_DIR.rglob("*.docx"):
             try:
-                text = load_docx_text(path)
-                if text:
-                    texts.append({
+                full_text = load_docx_text(path)
+                for i, chunk in enumerate(split_into_chunks(full_text)):
+                    chunks.append({
                         "source": path.name,
-                        "text": text
+                        "chunk_id": i,
+                        "text": chunk
                     })
             except Exception:
                 pass
 
-    DOCUMENT_TEXTS = texts
+    CHUNKS = chunks
 
 
-load_documents()
+load_chunks()
 
 
 @app.get("/")
 def health_check():
     return {
         "status": "ok",
-        "documents_loaded": len(DOCUMENT_TEXTS)
+        "chunks_loaded": len(CHUNKS)
     }
 
 
@@ -137,68 +121,71 @@ def detect_intent(query: str) -> str | None:
     return None
 
 
-def score_text(query: str, text: str, source: str) -> int:
+def score_chunk(query: str, chunk: dict) -> int:
     intent = detect_intent(query)
 
-    text_lower = text.lower()
-    source_lower = source.lower()
+    text_lower = chunk["text"].lower()
+    source_lower = chunk["source"].lower()
 
     score = 0
 
     query_words = re.findall(r"[a-zA-Zа-яА-ЯёЁ]+", query.lower())
+
     for word in query_words:
         if len(word) >= 4:
             if word in text_lower:
-                score += 1
-            if word in source_lower:
                 score += 2
+            if word in source_lower:
+                score += 3
 
     if intent:
         rule = INTENT_RULES[intent]
 
         for word in rule["positive"]:
-            if word.lower() in text_lower:
+            word_lower = word.lower()
+            if word_lower in text_lower:
+                score += 10
+            if word_lower in source_lower:
                 score += 8
-            if word.lower() in source_lower:
-                score += 12
 
         for word in rule["negative"]:
-            if word.lower() in text_lower:
-                score -= 6
-            if word.lower() in source_lower:
-                score -= 12
+            word_lower = word.lower()
+            if word_lower in text_lower:
+                score -= 8
+            if word_lower in source_lower:
+                score -= 10
 
     return score
 
 
-def find_best_document(query: str):
-    if not DOCUMENT_TEXTS:
+def find_best_chunk(query: str):
+    if not CHUNKS:
         return None, 0
 
-    best_doc = None
+    best_chunk = None
     best_score = -10**9
 
-    for doc in DOCUMENT_TEXTS:
-        score = score_text(query, doc["text"], doc["source"])
+    for chunk in CHUNKS:
+        score = score_chunk(query, chunk)
         if score > best_score:
             best_score = score
-            best_doc = doc
+            best_chunk = chunk
 
-    return best_doc, best_score
+    return best_chunk, best_score
 
 
 def make_english_answer(query: str) -> str:
     intent = detect_intent(query)
-    best_doc, score = find_best_document(query)
+    best_chunk, score = find_best_chunk(query)
 
-    if best_doc is None or score <= 0:
+    if best_chunk is None or score <= 0:
         return (
-    "I could not find this information in the official HSE documents. "
-    "Please try rephrasing the question or ask about admissions, migration, dormitories, "
-    "university regulations, or international student support."
-)
+            "I could not find this information in the official HSE documents. "
+            "Please try rephrasing the question or ask about admissions, migration, dormitories, "
+            "university regulations, or international student support."
+        )
 
-    source = best_doc["source"]
+    source = best_chunk["source"]
 
     if intent == "migration":
         return (
@@ -232,10 +219,12 @@ def make_english_answer(query: str) -> str:
             f"Relevant source: {source}."
         )
 
+    fragment = best_chunk["text"][:350]
+
     return (
-        "I found relevant information in the HSE documents, but the current lightweight version of the assistant "
-        "can only provide a short summary. Please check the official source for exact details. "
-        f"Relevant source: {source}."
+        "I found relevant information in the HSE documents. "
+        f"Relevant source: {source}. "
+        f"Fragment: {fragment}..."
     )
 
 
