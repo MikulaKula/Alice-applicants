@@ -21,21 +21,44 @@ INTENT_RULES = {
             "иностранный гражданин", "иностранный студент", "паспорт", "виза",
             "прибытие", "документ", "документы", "уведомление"
         ],
-        "negative": ["скидка", "скидок", "аттестация", "портфолио", "собеседование"],
+        "negative": [
+            "скидка", "скидок", "аттестация",
+            "портфолио", "собеседование"
+        ],
     },
+
     "dormitory": {
         "triggers": ["dormitory", "housing", "accommodation", "live"],
-        "positive": ["общежитие", "общежития", "проживание", "заселение", "место в общежитии"],
-        "negative": ["портфолио", "собеседование", "скидка", "аттестация"],
+        "positive": [
+            "общежитие", "общежития",
+            "проживание", "заселение",
+            "место в общежитии"
+        ],
+        "negative": [
+            "портфолио", "собеседование",
+            "скидка", "аттестация"
+        ],
     },
+
     "contacts": {
         "triggers": ["contact", "email", "support", "help", "office"],
-        "positive": ["контакт", "почта", "email", "e-mail", "поддержка", "помощь", "адрес", "телефон"],
-        "negative": ["портфолио", "скидка", "аттестация"],
+        "positive": [
+            "контакт", "почта", "email",
+            "e-mail", "поддержка",
+            "помощь", "адрес", "телефон"
+        ],
+        "negative": [
+            "портфолио", "скидка", "аттестация"
+        ],
     },
+
     "regulations": {
         "triggers": ["regulation", "regulations", "rules", "policy"],
-        "positive": ["положение", "регламент", "правила", "приказ", "утверждено", "порядок"],
+        "positive": [
+            "положение", "регламент",
+            "правила", "приказ",
+            "утверждено", "порядок"
+        ],
         "negative": [],
     },
 }
@@ -49,22 +72,32 @@ def clean_text(text: str) -> str:
 
 def load_docx_text(path: Path) -> str:
     doc = Document(path)
+
     parts = []
 
     for paragraph in doc.paragraphs:
         text = paragraph.text.strip()
+
         if text:
             parts.append(text)
 
     return clean_text(" ".join(parts))
 
 
-def split_into_chunks(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
+def split_into_chunks(
+    text: str,
+    chunk_size: int = CHUNK_SIZE,
+    overlap: int = CHUNK_OVERLAP
+) -> list[str]:
+
     chunks = []
+
     start = 0
 
     while start < len(text):
+
         end = start + chunk_size
+
         chunk = text[start:end].strip()
 
         if chunk:
@@ -84,19 +117,32 @@ def load_chunks() -> None:
     chunks = []
 
     if DOCS_DIR.exists():
+
         for path in DOCS_DIR.rglob("*.docx"):
+
             try:
+                print(f"LOADING: {path.name}")
+
                 full_text = load_docx_text(path)
-                for i, chunk in enumerate(split_into_chunks(full_text)):
+
+                split_chunks = split_into_chunks(full_text)
+
+                for i, chunk in enumerate(split_chunks):
+
                     chunks.append({
                         "source": path.name,
                         "chunk_id": i,
                         "text": chunk
                     })
-            except Exception:
-                pass
+
+                print(f"SUCCESS: {path.name}")
+
+            except Exception as e:
+                print(f"ERROR LOADING {path.name}: {e}")
 
     CHUNKS = chunks
+
+    print(f"TOTAL CHUNKS LOADED: {len(CHUNKS)}")
 
 
 load_chunks()
@@ -104,6 +150,7 @@ load_chunks()
 
 @app.get("/")
 def health_check():
+
     return {
         "status": "ok",
         "chunks_loaded": len(CHUNKS)
@@ -111,10 +158,13 @@ def health_check():
 
 
 def detect_intent(query: str) -> str | None:
+
     query_lower = query.lower()
 
     for intent, rule in INTENT_RULES.items():
+
         for trigger in rule["triggers"]:
+
             if trigger in query_lower:
                 return intent
 
@@ -122,6 +172,7 @@ def detect_intent(query: str) -> str | None:
 
 
 def score_chunk(query: str, chunk: dict) -> int:
+
     intent = detect_intent(query)
 
     text_lower = chunk["text"].lower()
@@ -129,29 +180,42 @@ def score_chunk(query: str, chunk: dict) -> int:
 
     score = 0
 
-    query_words = re.findall(r"[a-zA-Zа-яА-ЯёЁ]+", query.lower())
+    query_words = re.findall(
+        r"[a-zA-Zа-яА-ЯёЁ]+",
+        query.lower()
+    )
 
     for word in query_words:
+
         if len(word) >= 4:
+
             if word in text_lower:
                 score += 2
+
             if word in source_lower:
                 score += 3
 
     if intent:
+
         rule = INTENT_RULES[intent]
 
         for word in rule["positive"]:
+
             word_lower = word.lower()
+
             if word_lower in text_lower:
                 score += 10
+
             if word_lower in source_lower:
                 score += 8
 
         for word in rule["negative"]:
+
             word_lower = word.lower()
+
             if word_lower in text_lower:
                 score -= 8
+
             if word_lower in source_lower:
                 score -= 10
 
@@ -159,6 +223,7 @@ def score_chunk(query: str, chunk: dict) -> int:
 
 
 def find_best_chunk(query: str):
+
     if not CHUNKS:
         return None, 0
 
@@ -166,8 +231,11 @@ def find_best_chunk(query: str):
     best_score = -10**9
 
     for chunk in CHUNKS:
+
         score = score_chunk(query, chunk)
+
         if score > best_score:
+
             best_score = score
             best_chunk = chunk
 
@@ -175,47 +243,57 @@ def find_best_chunk(query: str):
 
 
 def make_english_answer(query: str) -> str:
+
     intent = detect_intent(query)
+
     best_chunk, score = find_best_chunk(query)
 
     if best_chunk is None or score <= 0:
+
         return (
             "I could not find this information in the official HSE documents. "
-            "Please try rephrasing the question or ask about admissions, migration, dormitories, "
-            "university regulations, or international student support."
+            "Please try rephrasing the question or ask about admissions, migration, "
+            "dormitories, university regulations, or international student support."
         )
 
     source = best_chunk["source"]
 
     if intent == "migration":
+
         return (
             "According to the available HSE documents, questions about migration registration "
             "should be checked through the official university procedures for international students. "
-            "The student may need to provide identity and migration-related documents, such as passport, visa, "
-            "arrival or registration documents, depending on the specific case. "
+            "The student may need to provide identity and migration-related documents, "
+            "such as passport, visa, arrival or registration documents, depending on the specific case. "
             f"Relevant source: {source}."
         )
 
     if intent == "dormitory":
+
         return (
-            "According to the available HSE documents, international students may use HSE dormitory-related "
-            "services if they meet the relevant university conditions. The exact accommodation procedure, "
-            "allocation rules, and settlement details should be checked in the official dormitory or admission documents. "
+            "According to the available HSE documents, international students may use "
+            "HSE dormitory-related services if they meet the relevant university conditions. "
+            "The exact accommodation procedure, allocation rules, and settlement details "
+            "should be checked in the official dormitory or admission documents. "
             f"Relevant source: {source}."
         )
 
     if intent == "contacts":
+
         return (
-            "According to the available HSE documents, students should use the official HSE contact channels "
-            "for support questions. If the issue concerns documents, migration, accommodation, or academic procedures, "
-            "it is better to contact the responsible university office directly. "
+            "According to the available HSE documents, students should use the official "
+            "HSE contact channels for support questions. "
+            "If the issue concerns documents, migration, accommodation, "
+            "or academic procedures, it is better to contact the responsible university office directly. "
             f"Relevant source: {source}."
         )
 
     if intent == "regulations":
+
         return (
-            "According to the available HSE documents, this topic is regulated by official university rules, "
-            "orders, or regulations. The exact procedure depends on the specific document and student category. "
+            "According to the available HSE documents, this topic is regulated "
+            "by official university rules, orders, or regulations. "
+            "The exact procedure depends on the specific document and student category. "
             f"Relevant source: {source}."
         )
 
@@ -230,24 +308,55 @@ def make_english_answer(query: str) -> str:
 
 @app.post("/alice")
 async def alice_webhook(request: Request):
-    data = await request.json()
 
-    user_text = (
-        data.get("request", {}).get("original_utterance", "")
-        or data.get("request", {}).get("command", "")
-        or data.get("text", "")
-    )
+    try:
 
-    if not user_text:
-        answer = "Hello. I can help international students with HSE-related questions."
-    else:
-        answer = make_english_answer(user_text)
+        data = await request.json()
 
-    return {
-        "version": data.get("version", "1.0"),
-        "session": data.get("session", {}),
-        "response": {
-            "text": answer[:900],
-            "end_session": False
+        print("REQUEST RECEIVED")
+        print(data)
+
+        user_text = (
+            data.get("request", {}).get("original_utterance", "")
+            or data.get("request", {}).get("command", "")
+            or data.get("text", "")
+        )
+
+        print(f"USER QUESTION: {user_text}")
+
+        if not user_text:
+
+            answer = (
+                "Hello. I can help international students "
+                "with HSE-related questions."
+            )
+
+        else:
+
+            answer = make_english_answer(user_text)
+
+        print(f"ANSWER: {answer}")
+
+        return {
+            "version": data.get("version", "1.0"),
+
+            "session": data.get("session", {}),
+
+            "response": {
+                "text": answer[:900],
+                "end_session": False
+            }
         }
-    }
+
+    except Exception as e:
+
+        print("WEBHOOK ERROR:", e)
+
+        return {
+            "version": "1.0",
+
+            "response": {
+                "text": "Internal server error.",
+                "end_session": False
+            }
+        }
