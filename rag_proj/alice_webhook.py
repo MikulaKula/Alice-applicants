@@ -194,16 +194,23 @@ async def webhook(request: Request):
             )
 
         # GREETING
-        elif q in ["hello", "hi", "привет"]:
+        elif q in ["hello", "hi", "привет", "start", "начать"]:
             answer = (
-                "Hello! I am HSE International Assistant. "
-                "You can ask about migration, dormitories or university rules."
-            )
+                "Hello! This is HSE International Assistant. "
+                "I help international students find official information about HSE University. "
+                "You can ask questions about migration registration, dormitories, "
+                "university regulations, or support contacts. "
+                "For example: "
+                "'What documents are required for migration registration?'"
+        )
 
         # EMPTY
         elif not user_text:
             answer = (
-                "Hello! Ask me about HSE for international students."
+                "Hello! This is HSE International Assistant. "
+                "I help international students with official HSE information. "
+                "You can ask about migration registration, dormitories, "
+                "support contacts, or university regulations."
             )
 
         # MAIN
