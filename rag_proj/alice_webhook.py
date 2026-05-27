@@ -162,7 +162,12 @@ def make_answer(query: str):
         return f"You may need passport, visa and migration documents. Source: {source}."
 
     if intent == "dormitory":
-        return f"International students can live in dormitories under HSE rules. Source: {source}."
+        return (
+            f"According to the available HSE documents, international applicants may be eligible "
+            f"for HSE dormitory accommodation under the relevant university rules. "
+            f"The exact conditions should be checked in the official admission or dormitory documents. "
+            f"Source: {source}."
+        )
 
     if intent == "contacts":
         return f"Please use official HSE contact channels. Source: {source}."
@@ -184,20 +189,23 @@ async def webhook(request: Request):
             or ""
         )
 
-        q = user_text.lower()
+        q = user_text.lower().strip()
+        q = q.replace("?", "").replace("!", "").replace(".", "")
 
         # HELP
         if q in ["help", "помощь", "что ты умеешь", "what can you do"]:
             answer = (
-                "I help international students with HSE questions. "
-                "Ask about migration, dormitories, regulations or contacts."
+                "I help international applicants find official HSE information. "
+                "You can ask about migration registration, dormitories, admission rules, "
+                "university regulations, or support contacts. "
+                "For example: What documents are required for migration registration?"
             )
 
         # GREETING
         elif q in ["hello", "hi", "привет", "start", "начать"]:
             answer = (
                 "Hello! This is HSE International Assistant. "
-                "I help international students find official information about HSE University. "
+                "I help international applicants find official information about HSE University. "
                 "You can ask questions about migration registration, dormitories, "
                 "university regulations, or support contacts. "
                 "For example: "
@@ -208,7 +216,7 @@ async def webhook(request: Request):
         elif not user_text:
             answer = (
                 "Hello! This is HSE International Assistant. "
-                "I help international students with official HSE information. "
+                "I help international applicants with official HSE information. "
                 "You can ask about migration registration, dormitories, "
                 "support contacts, or university regulations."
             )
